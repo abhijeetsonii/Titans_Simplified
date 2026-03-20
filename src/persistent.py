@@ -15,7 +15,7 @@ class PersistentMemory(nn.Module):
         super().__init__()
         self.config = config
         self.num_tokens = config.num_persistent_tokens
-        self.token_dim = config.dim
+        self.dim = config.dim
 
         self.memory_tokens = nn.Parameter(
             torch.randn(self.num_tokens, self.dim) * 0.02

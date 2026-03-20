@@ -21,93 +21,96 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # ------------------------------------------------
 # MODEL CONFIG
 # ------------------------------------------------
+def main():
+    config = TitansConfig(
+        vocab_size=50257,
+        dim=768,
+        num_layers=8,
+        chunk_size=512,
+        dropout=0.1
+    )
+    print("Config done")
 
-config = TitansConfig(
-    vocab_size=50257,
-    dim=768,
-    ffn_dim=3072,
-    num_layers=8,
-    chunk_size=512,
-    dropout=0.1
-)
+    model = TitansMAC(config)
+    print("Model initialized")
 
-model = TitansMAC(config)
+    # ------------------------------------------------
+    # TOKENIZER
+    # ------------------------------------------------
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    print("Tokenizer loaded")
+
+    # ------------------------------------------------
+    # DATASET
+    # ------------------------------------------------
+
+    dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
+    print("Dataset loaded")
+
+    def tokenize(example):
+
+        tokens = tokenizer(
+            example["text"],
+            truncation=True,
+            padding="max_length",
+            max_length=2048
+        )
+
+        return {"input_ids": tokens["input_ids"]}
 
 
-# ------------------------------------------------
-# TOKENIZER
-# ------------------------------------------------
+    dataset = dataset.map(tokenize, batched=True)
 
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-tokenizer.pad_token = tokenizer.eos_token
+    dataset.set_format(type="torch", columns=["input_ids"])
+    print("Dataset tokenized and formatted")
 
+    # ------------------------------------------------
+    # DATALOADER
+    # ------------------------------------------------
 
-# ------------------------------------------------
-# DATASET
-# ------------------------------------------------
-
-dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
-
-
-def tokenize(example):
-
-    tokens = tokenizer(
-        example["text"],
-        truncation=True,
-        padding="max_length",
-        max_length=2048
+    train_loader = DataLoader(
+        dataset["train"],
+        batch_size=8,
+        shuffle=True,
+        num_workers=4,
+        pin_memory=True
     )
 
-    return {"input_ids": tokens["input_ids"]}
+    print("DataLoader created")
+    # ------------------------------------------------
+    # TRAINER
+    # ------------------------------------------------
 
+    trainer = TitansTrainer(
+        model=model,
+        dataloader=train_loader,
+        device=device,
+        lr=3e-4
+    )
+    print("Trainer initialized")
 
-dataset = dataset.map(tokenize, batched=True)
+    # ------------------------------------------------
+    # TRAINING LOOP
+    # ------------------------------------------------
 
-dataset.set_format(type="torch", columns=["input_ids"])
+    EPOCHS = 3
 
+    for epoch in range(EPOCHS):
 
-# ------------------------------------------------
-# DATALOADER
-# ------------------------------------------------
+        loss = trainer.train_epoch()
 
-train_loader = DataLoader(
-    dataset["train"],
-    batch_size=8,
-    shuffle=True,
-    num_workers=4,
-    pin_memory=True
-)
+        print(f"\nEpoch {epoch} Loss: {loss:.4f}")
+    print("Training loop completed")
 
+    # ------------------------------------------------
+    # SAVE MODEL
+    # ------------------------------------------------
 
-# ------------------------------------------------
-# TRAINER
-# ------------------------------------------------
+    torch.save(model.state_dict(), "titans_mac.pt")
 
-trainer = TitansTrainer(
-    model=model,
-    dataloader=train_loader,
-    device=device,
-    lr=3e-4
-)
+    print("Training finished")
 
-
-# ------------------------------------------------
-# TRAINING LOOP
-# ------------------------------------------------
-
-EPOCHS = 3
-
-for epoch in range(EPOCHS):
-
-    loss = trainer.train_epoch()
-
-    print(f"\nEpoch {epoch} Loss: {loss:.4f}")
-
-
-# ------------------------------------------------
-# SAVE MODEL
-# ------------------------------------------------
-
-torch.save(model.state_dict(), "titans_mac.pt")
-
-print("Training finished")
+if __name__ == "__main__":
+    main()
