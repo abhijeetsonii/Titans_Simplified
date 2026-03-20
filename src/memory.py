@@ -470,9 +470,9 @@ class NeuralLongTermMemory(nn.Module):
         
         #apply convolution if enabled
         if self.use_conv:
-            q = rearrange(q, "b s d -> b d s")
-            q = self.conv_q(q)[..., : q.shape[-1]]
-            q = rearrange(q, "b d s -> b s d")
+            queries = rearrange(queries, "b s d -> b d s")
+            queries = self.conv_q(queries)[..., : queries.shape[-1]]
+            queries = rearrange(queries, "b d s -> b s d")
         
         #apply activation
         queries = F.silu(queries)
