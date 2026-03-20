@@ -170,7 +170,7 @@ class NeuralLongTermMemory(nn.Module):
     def __init__(self, config: TitansConfig):
         super().__init__()
         self.config = config
-        self.memory_mlp = MemoryMLP(config)
+        self.memory = MemoryMLP(config)
 
         # 2-MLP projections for the keys and values as described in the Nested Learning paper
         self.key_proj = nn.Sequential(
