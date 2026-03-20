@@ -1,15 +1,10 @@
-# Copyright 2024 Delanoe Pirard / Aedelon
-# Licensed under the Apache License, Version 2.0
-
 """
 Titans Model Architectures.
 
-This module implements the three variants of Titans:
-1. MAC (Memory as Context): Memory retrieval concatenated with input before attention
-2. MAG (Memory as Gate): Memory and attention combined via gating
-3. MAL (Memory as Layer): Memory used as a layer before attention
+This module implements the MAC variants of Titans:
 
-Plus the standalone LMM (Long-term Memory Module) without attention.
+MAC (Memory as Context): Memory retrieval concatenated with input before attention
+
 """
 
 from __future__ import annotations
@@ -40,8 +35,6 @@ class FeedForward(nn.Module):
         self.dropout = nn.Dropout(config.dropout)
         
 
-    
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass with SiLU gating."""
         gate = self.gate_proj(x)
@@ -56,8 +49,6 @@ class FeedForward(nn.Module):
 
 class RMSNorm(nn.Module):
     """Root Mean Square Layer Normalization.
-
-    
     Supports fused residual add + norm for efficiency.
     """
 
