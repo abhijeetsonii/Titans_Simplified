@@ -390,10 +390,10 @@ class NeuralLongTermMemory(nn.Module):
 
         # Computing the data dependent learning parameters using the gates
         x_mean = x.mean(dim=1, keepdim=True)  # (batch, 1, dim)
-        alpha = self.gate_decay(x_mean)  # scalar decay
-        theta = self.gate_lr(x_mean) * self.config.memory_lr  # scalar lr
+        alpha = self.gate_decay(x_mean).mean()  # scalar decay
+        theta = self.gate_lr(x_mean).mean() * self.config.memory_lr  # scalar lr
         eta = (
-            self.gate_momentum(x_mean) * self.config.memory_momentum
+            self.gate_momentum(x_mean).mean() * self.config.memory_momentum
         )  # scalar momentum
 
         # Compute gradients for memory update
