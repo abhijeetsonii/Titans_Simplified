@@ -130,54 +130,39 @@ class MACBlock(nn.Module):
         x: torch.Tensor,
         state: MemoryState | None = None,
     ) -> tuple[torch.Tensor, MemoryState]:
-        """Forward pass for MAC block.
-
-        Following the paper (Section 4.1, Eq. 21-25):
-        1. h_t = M*_{t-1}(q_t) - Retrieve from memory using input as query (Eq. 21)
-        2. S̃^(t) = [persistent] || h_t || x - Concatenate (Eq. 22)
-        3. y_t = Attn(S̃^(t)) - Attention (Eq. 23)
-        4. M_t = M_{t-1}(y_t) - Update memory with attention output (Eq. 24)
-        5. o_t = y_t ⊗ M*_t(y_t) - Final output (Eq. 25)
-
-        Args:
-            x: Input tensor (batch, seq, dim) - single chunk/segment
-            state: Memory state from previous chunk
-
-        Returns:
-            Tuple of (output, new_state)
-        """
         batch_size, seq_len, _ = x.shape
 
-        # Initialize memory state if needed
         if state is None:
             state = self.memory.init_state(batch_size, x.device)
 
-        # Step 1 (Eq. 21): Retrieve from memory using input as query
-        # h_t = M*_{t-1}(q_t) - forward pass without weight update
-        memory_retrieved = self.memory.retrieve(x, state)
+        # Pre-Norm for Attention and Memory Read
+        normed_x = self.norm1(x)
+
+        # Step 1: Retrieve from memory
+        memory_retrieved = self.memory.retrieve(normed_x, state)
         memory_tokens = self.norm_mem(memory_retrieved)
 
-        # Get persistent memory tokens
+        # Step 2: Attention
         persistent = self.persistent(batch_size)
+        attn_out = self.attention(normed_x, persistent=persistent, memory=memory_tokens)
+        
+        # y_t is the residual stream after attention
+        y_t = x + self.dropout(attn_out) 
 
-        # Steps 2-3 (Eq. 22-23): Attention with [persistent || memory || input]
-        normed = self.norm1(x)
-        attn_out = self.attention(normed, persistent=persistent, memory=memory_tokens)
-        y_t = x + self.dropout(attn_out)  # y_t is the attention output
+        # Step 3: Update memory with updated context
+        # We use the normed version for the inner-loop update for stability
+        _, new_state = self.memory(self.norm2(y_t), state=state)
 
-        # Step 4 (Eq. 24): Update memory with attention output
-        # M_t = M_{t-1}(y_t) - this updates memory weights
-        _, new_state = self.memory(y_t, state=state)
-
-        # Step 5 (Eq. 25): Final output o_t = y_t ⊗ M*_t(y_t)
-        # Retrieve from updated memory
-        mem_out = self.memory.retrieve(y_t, new_state)
-        output = y_t * mem_out  # Element-wise product
-
-        # Feed-forward
-        normed = self.norm2(output)
-        ffn_out = self.ffn(normed)
-        output = output + self.dropout(ffn_out)
+        # Step 4: Final output with Gated Memory Read (Eq. 25)
+        # Use a new norm or norm2 to read from the updated memory
+        mem_out = self.memory.retrieve(self.norm2(y_t), new_state)
+        
+        # Apply the gated update as a residual to keep the path alive
+        gated_output = y_t * torch.sigmoid(mem_out) # Use sigmoid for gating stability
+        
+        # Step 5: Feed-forward
+        ffn_out = self.ffn(self.norm2(gated_output))
+        output = gated_output + self.dropout(ffn_out)
 
         return output, new_state
 
@@ -215,57 +200,49 @@ class TitansMAC(nn.Module):
         """Initialize weights."""
         nn.init.normal_(self.embed.weight, std=self.config.init_std)
 
-    def forward(
+def forward(
         self,
         input_ids: torch.Tensor,
         states: list[MemoryState] | None = None,
     ) -> tuple[torch.Tensor, list[MemoryState]]:
-        """Forward pass.
-
-        Args:
-            input_ids: Token IDs (batch, seq)
-            states: List of memory states for each layer
-
-        Returns:
-            Tuple of (logits, new_states)
-        """
         batch_size, seq_len = input_ids.shape
         chunk_size = self.config.chunk_size
 
-        # Initialize states if needed
+        # 1. Initialize states if needed
         if states is None:
             states = [None] * len(self.blocks)
 
-        # Embed
+        # 2. Embed
         x = self.embed(input_ids)
 
-        # Process in chunks
+        # 3. Process in chunks
         outputs = []
-        new_states = [None] * len(self.blocks)
-
+        
         for chunk_start in range(0, seq_len, chunk_size):
             chunk_end = min(chunk_start + chunk_size, seq_len)
             chunk = x[:, chunk_start:chunk_end]
 
-            # Process through blocks
-            chunk_states = states
+            current_chunk_updated_states = [] 
+            
             for i, block in enumerate(self.blocks):
-                chunk, new_state = block(chunk, state=chunk_states[i])
-                new_states[i] = new_state
+                # Pass the state from the PREVIOUS chunk for this layer
+                chunk, new_state = block(chunk, state=states[i])
+                current_chunk_updated_states.append(new_state)
 
             outputs.append(chunk)
+            
+            # CRITICAL: Transfer these states so the NEXT chunk can use them
+            states = current_chunk_updated_states 
 
-            # Update states for next chunk
-            states = new_states
-
-        # Concatenate outputs
+        # 4. Concatenate outputs
         x = torch.cat(outputs, dim=1)
 
-        # Output
+        # 5. Final Head
         x = self.norm(x)
         logits = self.head(x)
 
-        return logits, new_states
+        # 6. Return the LAST states calculated (from the final chunk)
+        return logits, states
 
 
 
