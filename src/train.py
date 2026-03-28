@@ -34,57 +34,57 @@ def main():
     model = TitansMAC(config)
     print("Model initialized")
 
-# ------------------------------------------------
-# TOKENIZER
-# ------------------------------------------------
+    # ------------------------------------------------
+    # TOKENIZER
+    # ------------------------------------------------
 
-tokenizer = AutoTokenizer.from_pretrained("gpt2")
-tokenizer.pad_token = tokenizer.eos_token
-print("Tokenizer loaded")
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    tokenizer.pad_token = tokenizer.eos_token
+    print("Tokenizer loaded")
 
-# ------------------------------------------------
-# DATASET & TOKENIZATION (Fixed for Dense Training)
-# ------------------------------------------------
+    # ------------------------------------------------
+    # DATASET & TOKENIZATION (Fixed for Dense Training)
+    # ------------------------------------------------
 
-dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
-print("Dataset loaded")
+    dataset = load_dataset("wikitext", "wikitext-2-raw-v1")
+    print("Dataset loaded")
 
-# 1. Pre-filter: Remove empty lines and headers to reduce noise
-dataset = dataset.filter(lambda x: len(x["text"]) > 5)
+    # 1. Pre-filter: Remove empty lines and headers to reduce noise
+    dataset = dataset.filter(lambda x: len(x["text"]) > 5)
 
-def tokenize_function(examples):
-    # Tokenize without padding or truncation here
-    return tokenizer(examples["text"])
+    def tokenize_function(examples):
+        # Tokenize without padding or truncation here
+        return tokenizer(examples["text"])
 
-# 2. Map the raw tokenization
-tokenized_datasets = dataset.map(
-    tokenize_function, 
-    batched=True, 
-    remove_columns=["text"],
-    desc="Running tokenizer on dataset"
-)
+    # 2. Map the raw tokenization
+    tokenized_datasets = dataset.map(
+        tokenize_function, 
+        batched=True, 
+        remove_columns=["text"],
+        desc="Running tokenizer on dataset"
+    )
 
-def group_texts(examples):
-    # Concatenate all input_ids from the batch
-    concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
-    total_length = len(concatenated_examples[list(examples.keys())[0]])
-    
-    # We drop the small remainder at the end of the dataset
-    # block_size should match your model's max sequence length
-    block_size = 2048 
-    if total_length >= block_size:
-        total_length = (total_length // block_size) * block_size
+    def group_texts(examples):
+        # Concatenate all input_ids from the batch
+        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
         
-    # Split into chunks of block_size
-    result = {
-        k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
-        for k, t in concatenated_examples.items()
-    }
-    
-    # In Causal LM, labels are usually just a copy of input_ids 
-    # (The trainer handles the shifting)
-    result["labels"] = result["input_ids"].copy()
-    return result
+        # We drop the small remainder at the end of the dataset
+        # block_size should match your model's max sequence length
+        block_size = 2048 
+        if total_length >= block_size:
+            total_length = (total_length // block_size) * block_size
+            
+        # Split into chunks of block_size
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
+        
+        # In Causal LM, labels are usually just a copy of input_ids 
+        # (The trainer handles the shifting)
+        result["labels"] = result["input_ids"].copy()
+        return result
 
     # 3. Group everything into dense 2048-token blocks
     lm_datasets = tokenized_datasets.map(
