@@ -1,1 +1,63 @@
-venv
+.venv/
+*.pt
+runs/
+__*
+# Python
+#
+# Python byte-code files:
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyd
+*.pyo
+*.ipnbcheckpoints
+*.pst
+*.origin
+#
+# Distribution / packaging
+.Python
+build/
+dist/
+wheels/
+*.egg-info/
+*.eggs
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.manifest
+*.spec
+#
+# Installer logs
+pip-log.txt
+pip-delete-this-line.txt
+#
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.mo
+*.pot
+#
+# Transcompilation / linter / other
+.mypy_cache/
+.pyre/
+.pytype/
+.ruff_cache/
+.pytest_cache/
+#
+# IDEs and other tools
+.idea/
+.vscode/
+*.swp
+#
+# End of Source

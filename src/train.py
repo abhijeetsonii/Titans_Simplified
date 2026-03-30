@@ -1,5 +1,8 @@
+from xml.parsers.expat import model
+
 import torch
 from torch.utils.data import DataLoader
+from torch.utils.tensorboard import SummaryWriter
 from datasets import load_dataset
 from transformers import AutoTokenizer
 
@@ -27,6 +30,9 @@ def main():
     print("Config done")
 
     model = TitansMAC(config)
+    checkpoint_path = "titans_mac.pt"
+    model.load_state_dict(torch.load(checkpoint_path, map_location=device))
+
     print("Model initialized")
 
     # 2. TOKENIZER
@@ -79,8 +85,16 @@ def main():
     # 4. DATALOADER
     train_loader = DataLoader(
         lm_datasets["train"],
-        batch_size=4, # Safe for 2048 seq_len on 4060
+        batch_size=1, 
         shuffle=True,
+        num_workers=4,
+        pin_memory=True
+    )
+
+    val_loader = DataLoader(
+        lm_datasets["validation"],
+        batch_size=1,
+        shuffle=False,
         num_workers=4,
         pin_memory=True
     )
@@ -90,22 +104,50 @@ def main():
     trainer = TitansTrainer(
         model=model,
         dataloader=train_loader,
+        val_dataloader=val_loader,
         device=device,
         lr=3e-4
     )
     print("Trainer initialized")
 
+    # TensorBoard setup
+    writer = SummaryWriter(log_dir="runs/titans_train")
+    writer.add_text("config", str(config))
+
     # 6. TRAINING LOOP
-    EPOCHS = 3
+    EPOCHS = 25
+    best_val_loss = float("inf")
+    best_checkpoint_path = "best_titans_mac.pt"
+
     for epoch in range(EPOCHS):
         loss = trainer.train_epoch()
+        val_loss = trainer.evaluate()
+
         print(f"\nEpoch {epoch} Loss: {loss:.4f}")
-    
+        print(f"Validation Loss: {val_loss:.4f}\n")
+
+        writer.add_scalar("loss/train", loss, epoch)
+        writer.add_scalar("loss/validation", val_loss, epoch)
+
+        # Optional additional metrics
+        if hasattr(trainer, "optimizer"):
+            lr = trainer.optimizer.param_groups[0]["lr"]
+            writer.add_scalar("lr", lr, epoch)
+
+        # Checkpointing on best validation loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), best_checkpoint_path)
+            print(f"New best model saved: {best_checkpoint_path} (val_loss={val_loss:.4f})")
+
     print("Training loop completed")
 
-    # 7. SAVE MODEL
-    torch.save(model.state_dict(), "titans_mac.pt")
-    print("Training finished")
+    writer.close()
+
+    # 7. Final save for latest weights
+    torch.save(model.state_dict(), checkpoint_path)
+    print(f"Training finished; final model saved: {checkpoint_path}")
+    print(f"Best model saved: {best_checkpoint_path} with val_loss={best_val_loss:.4f}")
 
 if __name__ == "__main__":
     main()

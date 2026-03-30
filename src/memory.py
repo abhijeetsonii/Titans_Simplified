@@ -133,7 +133,7 @@ class MemoryMLP(nn.Module):
         # .detach() is used here only for the INITIAL state 
         # to prevent the optimizer from trying to update 'MemoryState' 
         # as a leaf node.
-        return [layer.weight.detach().clone() for layer in self.layers]
+        return [layer.weight.detach().clone().requires_grad_(True) for layer in self.layers]
     
 class NeuralLongTermMemory(nn.Module):
     """Neural Long-term Memory Module.
@@ -266,7 +266,9 @@ class NeuralLongTermMemory(nn.Module):
         """
         # 1. DO NOT detach keys or values. They must remain connected 
         # to the projection layers (key_proj, value_proj).
-        
+        for w in weights:
+            if not w.requires_grad:
+                w.requires_grad_(True)
         # 2. Use a context manager to ensure gradients are enabled
         with torch.enable_grad():
             # Compute the associative loss: loss(M; x) = ||M(k) - v||^2

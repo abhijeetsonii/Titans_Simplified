@@ -200,49 +200,49 @@ class TitansMAC(nn.Module):
         """Initialize weights."""
         nn.init.normal_(self.embed.weight, std=self.config.init_std)
 
-def forward(
-        self,
-        input_ids: torch.Tensor,
-        states: list[MemoryState] | None = None,
-    ) -> tuple[torch.Tensor, list[MemoryState]]:
-        batch_size, seq_len = input_ids.shape
-        chunk_size = self.config.chunk_size
+    def forward(
+            self,
+            input_ids: torch.Tensor,
+            states: list[MemoryState] | None = None,
+        ) -> tuple[torch.Tensor, list[MemoryState]]:
+            batch_size, seq_len = input_ids.shape
+            chunk_size = self.config.chunk_size
 
-        # 1. Initialize states if needed
-        if states is None:
-            states = [None] * len(self.blocks)
+            # 1. Initialize states if needed
+            if states is None:
+                states = [None] * len(self.blocks)
 
-        # 2. Embed
-        x = self.embed(input_ids)
+            # 2. Embed
+            x = self.embed(input_ids)
 
-        # 3. Process in chunks
-        outputs = []
-        
-        for chunk_start in range(0, seq_len, chunk_size):
-            chunk_end = min(chunk_start + chunk_size, seq_len)
-            chunk = x[:, chunk_start:chunk_end]
-
-            current_chunk_updated_states = [] 
+            # 3. Process in chunks
+            outputs = []
             
-            for i, block in enumerate(self.blocks):
-                # Pass the state from the PREVIOUS chunk for this layer
-                chunk, new_state = block(chunk, state=states[i])
-                current_chunk_updated_states.append(new_state)
+            for chunk_start in range(0, seq_len, chunk_size):
+                chunk_end = min(chunk_start + chunk_size, seq_len)
+                chunk = x[:, chunk_start:chunk_end]
 
-            outputs.append(chunk)
-            
-            # CRITICAL: Transfer these states so the NEXT chunk can use them
-            states = current_chunk_updated_states 
+                current_chunk_updated_states = [] 
+                
+                for i, block in enumerate(self.blocks):
+                    # Pass the state from the PREVIOUS chunk for this layer
+                    chunk, new_state = block(chunk, state=states[i])
+                    current_chunk_updated_states.append(new_state)
 
-        # 4. Concatenate outputs
-        x = torch.cat(outputs, dim=1)
+                outputs.append(chunk)
+                
+                # CRITICAL: Transfer these states so the NEXT chunk can use them
+                states = current_chunk_updated_states 
 
-        # 5. Final Head
-        x = self.norm(x)
-        logits = self.head(x)
+            # 4. Concatenate outputs
+            x = torch.cat(outputs, dim=1)
 
-        # 6. Return the LAST states calculated (from the final chunk)
-        return logits, states
+            # 5. Final Head
+            x = self.norm(x)
+            logits = self.head(x)
+
+            # 6. Return the LAST states calculated (from the final chunk)
+            return logits, states
 
 
 
